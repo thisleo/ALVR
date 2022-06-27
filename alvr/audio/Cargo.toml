@@ -1,6 +1,6 @@
 [package]
 name = "alvr_audio"
-version = "18.0.0-dev02"
+version = "18.0.0-dev04"
 authors = ["alvr-org", "Riccardo Zaglia <riccardo.zaglia5@gmail.com>"]
 license = "MIT"
 edition = "2021"
@@ -11,20 +11,20 @@ alvr_common = { path = "../common" }
 alvr_session = { path = "../session" }
 alvr_sockets = { path = "../sockets" }
 
-cpal = "0.13.5"
 rodio = "0.15"
 serde = "1"
 tokio = "1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-cpal = { version = "0.13.5", features = ["jack"] }
+cpal = { git = "https://github.com/RustAudio/cpal", features = ["jack"] }
 
 [target.'cfg(not(target_os = "linux"))'.dependencies]
-cpal = "0.13.5"
+# Needs fix for android
+cpal = { git = "https://github.com/RustAudio/cpal" }
 
 [target.'cfg(windows)'.dependencies]
-widestring = "0.5"
-windows = { version = "0.36", features = [
+widestring = "1"
+windows = { version = "0.38", features = [
     "Win32_Devices_FunctionDiscovery",
     "Win32_Foundation",
     "Win32_Media_Audio_Endpoints",

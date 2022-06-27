@@ -74,6 +74,7 @@ public:
 	uint64_t m_adaptiveBitrateDownRate;
 	float m_adaptiveBitrateLightLoadThreshold;
 	bool m_use10bitEncoder;
+	bool m_forceSW;
 	uint32_t m_swThreadCount;
 
 	// Controller configs
@@ -88,9 +89,7 @@ public:
 	std::string mControllerRegisteredDeviceType;
 	std::string m_controllerInputProfilePath;
 	bool m_disableController;
-	
-	double m_controllerPoseOffset = 0;
-	bool m_serversidePrediction;
+
 	float m_linearVelocityCutoff;
 	float m_angularVelocityCutoff;
 

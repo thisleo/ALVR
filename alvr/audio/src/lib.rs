@@ -1,9 +1,9 @@
 use alvr_common::{once_cell::sync::Lazy, parking_lot::Mutex, prelude::*};
-use alvr_session::{AudioConfig, AudioDeviceId, LinuxAudioBackend};
+use alvr_session::{AudioBufferingConfig, AudioDeviceId, LinuxAudioBackend};
 use alvr_sockets::{StreamReceiver, StreamSender};
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
-    BufferSize, Device, Sample, SampleFormat, SampleRate, StreamConfig,
+    BufferSize, Device, Sample, SampleFormat, StreamConfig,
 };
 use rodio::{OutputStream, Source};
 use std::{
@@ -47,10 +47,9 @@ impl AudioDeviceType {
     }
 }
 
+#[allow(dead_code)]
 pub struct AudioDevice {
     inner: Device,
-
-    #[cfg(windows)]
     device_type: AudioDeviceType,
 }
 
@@ -145,14 +144,23 @@ impl AudioDevice {
 
         Ok(Self {
             inner: device,
-
-            #[cfg(windows)]
             device_type,
         })
     }
 
     pub fn name(&self) -> StrResult<String> {
         self.inner.name().map_err(err!())
+    }
+
+    pub fn input_sample_rate(&self) -> StrResult<u32> {
+        let config = if let Ok(config) = self.inner.default_input_config() {
+            config
+        } else {
+            // On Windows, loopback devices are not recognized as input devices. Use output config.
+            self.inner.default_output_config().map_err(err!())?
+        };
+
+        Ok(config.sample_rate().0)
     }
 }
 
@@ -171,21 +179,17 @@ fn get_windows_device(device: &AudioDevice) -> StrResult<IMMDevice> {
     use windows::Win32::{
         Devices::FunctionDiscovery::PKEY_Device_FriendlyName,
         Media::Audio::{eAll, IMMDeviceEnumerator, MMDeviceEnumerator, DEVICE_STATE_ACTIVE},
-        System::Com::{
-            CoCreateInstance, CoInitializeEx,
-            StructuredStorage::{PropVariantClear, STGM_READ},
-            CLSCTX_ALL, COINIT_MULTITHREADED,
-        },
+        System::Com::{self, StructuredStorage::STGM_READ, CLSCTX_ALL, COINIT_MULTITHREADED},
     };
 
     let device_name = device.inner.name().map_err(err!())?;
 
     unsafe {
         // This will fail the second time is called, ignore it
-        CoInitializeEx(ptr::null_mut(), COINIT_MULTITHREADED).ok();
+        Com::CoInitializeEx(ptr::null_mut(), COINIT_MULTITHREADED).ok();
 
         let imm_device_enumerator: IMMDeviceEnumerator =
-            CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).map_err(err!())?;
+            Com::CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).map_err(err!())?;
 
         let imm_device_collection = imm_device_enumerator
             .EnumAudioEndpoints(eAll, DEVICE_STATE_ACTIVE)
@@ -203,7 +207,7 @@ fn get_windows_device(device: &AudioDevice) -> StrResult<IMMDevice> {
                 .map_err(err!())?;
             let utf16_name =
                 U16CStr::from_ptr_str(prop_variant.Anonymous.Anonymous.Anonymous.pwszVal.0);
-            PropVariantClear(&mut prop_variant).map_err(err!())?;
+            Com::StructuredStorage::PropVariantClear(&mut prop_variant).map_err(err!())?;
 
             let imm_device_name = utf16_name.to_string().map_err(err!())?;
             if imm_device_name == device_name {
@@ -218,7 +222,7 @@ fn get_windows_device(device: &AudioDevice) -> StrResult<IMMDevice> {
 #[cfg(windows)]
 pub fn get_windows_device_id(device: &AudioDevice) -> StrResult<String> {
     use widestring::U16CStr;
-    use windows::Win32::System::Com::CoTaskMemFree;
+    use windows::Win32::System::Com;
 
     unsafe {
         let imm_device = get_windows_device(device)?;
@@ -227,7 +231,7 @@ pub fn get_windows_device_id(device: &AudioDevice) -> StrResult<String> {
         let id_str = U16CStr::from_ptr_str(id_str_ptr.0)
             .to_string()
             .map_err(err!())?;
-        CoTaskMemFree(id_str_ptr.0 as _);
+        Com::CoTaskMemFree(id_str_ptr.0 as _);
 
         Ok(id_str)
     }
@@ -236,28 +240,15 @@ pub fn get_windows_device_id(device: &AudioDevice) -> StrResult<String> {
 // device must be an output device
 #[cfg(windows)]
 fn set_mute_windows_device(device: &AudioDevice, mute: bool) -> StrResult {
-    use std::{
-        mem,
-        ptr::{self, NonNull},
-    };
-    use windows::{
-        core::Interface,
-        Win32::{Media::Audio::Endpoints::IAudioEndpointVolume, System::Com::CLSCTX_ALL},
-    };
+    use std::ptr;
+    use windows::Win32::{Media::Audio::Endpoints::IAudioEndpointVolume, System::Com::CLSCTX_ALL};
 
     unsafe {
         let imm_device = get_windows_device(device)?;
 
-        let mut res_ptr = ptr::null_mut();
-        imm_device
-            .Activate(
-                &IAudioEndpointVolume::IID,
-                CLSCTX_ALL,
-                ptr::null_mut(),
-                &mut res_ptr,
-            )
+        let endpoint_volume = imm_device
+            .Activate::<IAudioEndpointVolume>(CLSCTX_ALL, ptr::null_mut())
             .map_err(err!())?;
-        let endpoint_volume: IAudioEndpointVolume = mem::transmute(NonNull::new(res_ptr).unwrap());
 
         endpoint_volume
             .SetMute(mute, ptr::null_mut())
@@ -267,66 +258,22 @@ fn set_mute_windows_device(device: &AudioDevice, mute: bool) -> StrResult {
     Ok(())
 }
 
-pub fn get_sample_rate(device: &AudioDevice) -> StrResult<u32> {
-    let maybe_config_range = device
-        .inner
-        .supported_output_configs()
-        .map_err(err!())?
-        .next();
-    let config = if let Some(config) = maybe_config_range {
-        config
-    } else {
-        device
-            .inner
-            .supported_input_configs()
-            .map_err(err!())?
-            .next()
-            .ok_or_else(enone!())?
-    };
-
-    // In theory we should check all configs for a 48000 sample rate.
-    // In practice it seems like most stuff we care about supports one sample rate
-    // or arbitrary ones, and this is enough to unbreak the common Linux desktop
-    // audio setups. Could be revisited later if this ever turns out to matter.
-
-    if config.min_sample_rate().0 <= 48000 && config.max_sample_rate().0 >= 48000 {
-        Ok(48000)
-    } else {
-        // Assumption: device is in shared mode: this means that there is one and fixed sample rate,
-        // format and channel count
-        Ok(config.min_sample_rate().0)
-    }
-}
-
 #[cfg_attr(not(windows), allow(unused_variables))]
 pub async fn record_audio_loop(
     device: AudioDevice,
     channels_count: u16,
-    sample_rate: u32,
     mute: bool,
     mut sender: StreamSender<()>,
 ) -> StrResult {
-    let maybe_config_range = device
-        .inner
-        .supported_output_configs()
-        .map_err(err!())?
-        .next();
-    let config = if let Some(config) = maybe_config_range {
+    let config = if let Ok(config) = device.inner.default_input_config() {
         config
     } else {
-        device
-            .inner
-            .supported_input_configs()
-            .map_err(err!())?
-            .next()
-            .ok_or_else(enone!())?
+        // On Windows, loopback devices are not recognized as input devices. Use output config.
+        device.inner.default_output_config().map_err(err!())?
     };
 
-    if sample_rate < config.min_sample_rate().0 || sample_rate > config.max_sample_rate().0 {
-        return fmt_e!("Sample rate not supported");
-    }
-
     if config.channels() > 2 {
+        // todo: handle more than 2 channels
         return fmt_e!(
             "Audio devices with more than 2 channels are not supported. {}",
             "Please turn off surround audio."
@@ -335,7 +282,7 @@ pub async fn record_audio_loop(
 
     let stream_config = StreamConfig {
         channels: config.channels(),
-        sample_rate: SampleRate(sample_rate),
+        sample_rate: config.sample_rate(),
         buffer_size: BufferSize::Default,
     };
 
@@ -611,7 +558,7 @@ pub async fn play_audio_loop(
     device: AudioDevice,
     channels_count: u16,
     sample_rate: u32,
-    config: AudioConfig,
+    config: AudioBufferingConfig,
     receiver: StreamReceiver<()>,
 ) -> StrResult {
     // Size of a chunk of frames. It corresponds to the duration if a fade-in/out in frames.

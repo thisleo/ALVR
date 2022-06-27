@@ -1,6 +1,6 @@
 use bytemuck::{Pod, Zeroable};
 use serde::{Deserialize, Serialize};
-use settings_schema::{DictionaryDefault, EntryData, SettingsSchema, Switch, SwitchDefault};
+use settings_schema::{EntryData, SettingsSchema, Switch, SwitchDefault};
 
 include!(concat!(env!("OUT_DIR"), "/openvr_property_keys.rs"));
 
@@ -84,6 +84,17 @@ pub struct AdaptiveBitrateDesc {
     pub bitrate_light_load_threshold: f32,
 }
 
+#[derive(SettingsSchema, Serialize, Deserialize, Copy, Clone)]
+#[serde(rename_all = "camelCase", tag = "type", content = "content")]
+#[repr(u8)]
+pub enum OculusFovetionLevel {
+    None,
+    Low,
+    Medium,
+    High,
+    HighTop,
+}
+
 #[derive(SettingsSchema, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FoveatedRenderingDesc {
@@ -104,6 +115,9 @@ pub struct FoveatedRenderingDesc {
 
     #[schema(min = 1., max = 10., step = 1.)]
     pub edge_ratio_y: f32,
+
+    pub oculus_foveation_level: OculusFovetionLevel,
+    pub dynamic_oculus_foveation: bool,
 }
 
 #[derive(SettingsSchema, Clone, Copy, Serialize, Deserialize, Pod, Zeroable)]
@@ -171,6 +185,9 @@ pub struct VideoDesc {
     pub use_10bit_encoder: bool,
 
     #[schema(advanced)]
+    pub force_sw: bool,
+
+    #[schema(advanced)]
     pub sw_thread_count: u32,
 
     #[schema(min = 1, max = 500)]
@@ -196,7 +213,7 @@ pub enum AudioDeviceId {
 
 #[derive(SettingsSchema, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AudioConfig {
+pub struct AudioBufferingConfig {
     #[schema(min = 0, max = 200)]
     pub average_buffering_ms: u64,
 
@@ -212,7 +229,7 @@ pub struct GameAudioDesc {
     #[schema(advanced)]
     pub device_id: AudioDeviceId,
     pub mute_when_streaming: bool,
-    pub config: AudioConfig,
+    pub buffering_config: AudioBufferingConfig,
 }
 
 // Note: sample rate is a free parameter for microphone, because both server and client supports
@@ -231,10 +248,7 @@ pub struct MicrophoneDesc {
     #[schema(advanced)]
     pub output_device_id: AudioDeviceId,
 
-    #[schema(advanced)]
-    pub sample_rate: u32,
-
-    pub config: AudioConfig,
+    pub buffering_config: AudioBufferingConfig,
 }
 
 #[derive(SettingsSchema, Serialize, Deserialize, Clone, Copy)]
@@ -267,7 +281,7 @@ pub enum OpenvrPropValue {
     String(String),
 }
 
-#[derive(SettingsSchema, Serialize, Deserialize)]
+#[derive(SettingsSchema, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ControllersDesc {
     // Dropdown:
@@ -311,16 +325,8 @@ pub struct ControllersDesc {
     #[schema(advanced)]
     pub input_profile_path: String,
 
-    #[schema(placeholder = "tracking_speed")]
-    //
-    #[schema(advanced)]
-    pub pose_time_offset: f32,
-
-    #[schema(advanced)]
-    pub clientside_prediction: bool,
-
-    #[schema(advanced)]
-    pub serverside_prediction: bool,
+    #[schema(advanced, min = 0.0, max = 1.0, step = 0.01)]
+    pub prediction_multiplier: f32,
 
     #[schema(advanced, min = 0., max = 0.1, step = 0.001)]
     pub linear_velocity_cutoff: f32,
@@ -334,7 +340,7 @@ pub struct ControllersDesc {
     #[schema(advanced)]
     pub rotation_offset_left: [f32; 3],
 
-    #[schema(advanced, min = 0., max = 5., step = 0.1)]
+    #[schema(min = 0., max = 5., step = 0.1)]
     pub haptics_intensity: f32,
 
     #[schema(advanced, min = 0., max = 1., step = 0.01)]
@@ -501,6 +507,7 @@ pub struct ExtraDesc {
     pub update_channel: UpdateChannel,
     pub log_to_disk: bool,
 
+    pub log_button_presses: bool,
     #[schema(advanced)]
     pub notification_level: LogLevel,
     #[schema(advanced)]
@@ -570,6 +577,7 @@ pub fn session_settings_default() -> SettingsDefault {
             // },
             client_request_realtime_decoder: true,
             use_10bit_encoder: false,
+            force_sw: false,
             sw_thread_count: 0,
             encode_bitrate_mbs: 30,
             adaptive_bitrate: SwitchDefault {
@@ -600,6 +608,10 @@ pub fn session_settings_default() -> SettingsDefault {
                     center_shift_y: 0.1,
                     edge_ratio_x: 4.,
                     edge_ratio_y: 5.,
+                    oculus_foveation_level: OculusFovetionLevelDefault {
+                        variant: OculusFovetionLevelDefaultVariant::HighTop,
+                    },
+                    dynamic_oculus_foveation: true,
                 },
             },
             color_correction: SwitchDefault {
@@ -626,7 +638,7 @@ pub fn session_settings_default() -> SettingsDefault {
                         Index: 1,
                     },
                     mute_when_streaming: true,
-                    config: AudioConfigDefault {
+                    buffering_config: AudioBufferingConfigDefault {
                         average_buffering_ms: 50,
                         batch_ms: 10,
                     },
@@ -646,8 +658,7 @@ pub fn session_settings_default() -> SettingsDefault {
                         Name: "".into(),
                         Index: 1,
                     },
-                    sample_rate: 44100,
-                    config: AudioConfigDefault {
+                    buffering_config: AudioBufferingConfigDefault {
                         average_buffering_ms: 50,
                         batch_ms: 10,
                     },
@@ -683,9 +694,7 @@ pub fn session_settings_default() -> SettingsDefault {
                     ctrl_type_right: "oculus_touch".into(),
                     registered_device_type: "oculus/1WMGH000XX0000_Controller".into(),
                     input_profile_path: "{oculus}/input/touch_profile.json".into(),
-                    pose_time_offset: 0.01,
-                    clientside_prediction: false,
-                    serverside_prediction: true,
+                    prediction_multiplier: 1.0,
                     linear_velocity_cutoff: 0.01,
                     angular_velocity_cutoff: 10.,
                     position_offset_left: [-0.0065, 0.002, -0.051],
@@ -743,6 +752,7 @@ pub fn session_settings_default() -> SettingsDefault {
                 },
             },
             log_to_disk: cfg!(debug_assertions),
+            log_button_presses: false,
             notification_level: LogLevelDefault {
                 variant: if cfg!(debug_assertions) {
                     LogLevelDefaultVariant::Info
