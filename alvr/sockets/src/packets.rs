@@ -98,6 +98,7 @@ pub enum ClientControlPacket {
     Battery(BatteryPacket),
     VideoErrorReport, // legacy
     Button { path_id: u64, value: ButtonValue },
+    ActiveInteractionProfile { device_id: u64, profile_id: u64 },
     Reserved(String),
     ReservedBuffer(Vec<u8>),
 }
@@ -170,4 +171,8 @@ pub struct ClientStatistics {
     pub rendering: Duration,
     pub vsync_queue: Duration,
     pub total_pipeline_latency: Duration,
+
+    // Note: This is used for the controller prediction.
+    // NB: This contains also the tracking packet send latency so it might lead to overprediction
+    pub average_total_pipeline_latency: Duration,
 }

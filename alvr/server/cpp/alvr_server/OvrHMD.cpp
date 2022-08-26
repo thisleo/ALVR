@@ -187,11 +187,6 @@ vr::EVRInitError OvrHmd::Activate(vr::TrackedDeviceIndex_t unObjectId) {
     vr::VRProperties()->SetBoolProperty(
         this->prop_container, vr::Prop_DeviceProvidesBatteryStatus_Bool, true);
 
-    // Use proximity sensor
-    vr::VRProperties()->SetBoolProperty(
-        this->prop_container, vr::Prop_ContainsProximitySensor_Bool, true);
-    vr::VRDriverInput()->CreateBooleanComponent(this->prop_container, "/proximity", &m_proximity);
-
 #ifdef _WIN32
     float originalIPD =
         vr::VRSettings()->GetFloat(vr::k_pch_SteamVR_Section, vr::k_pch_SteamVR_IPD_Float);
@@ -307,7 +302,7 @@ void *OvrHmd::GetComponent(const char *component_name_and_version) {
 
 vr::DriverPose_t OvrHmd::GetPose() { return m_pose; }
 
-void OvrHmd::OnPoseUpdated(uint64_t targetTimestampNs, AlvrDeviceMotion motion) {
+void OvrHmd::OnPoseUpdated(uint64_t targetTimestampNs, float predictionS, AlvrDeviceMotion motion) {
     if (this->object_id != vr::k_unTrackedDeviceIndexInvalid) {
         m_pose.poseIsValid = true;
         m_pose.result = vr::TrackingResult_Running_OK;
@@ -326,17 +321,9 @@ void OvrHmd::OnPoseUpdated(uint64_t targetTimestampNs, AlvrDeviceMotion motion) 
         m_pose.vecPosition[1] = motion.position[1];
         m_pose.vecPosition[2] = motion.position[2];
 
-        Debug("GetPose: Rotation=(%f, %f, %f, %f) Position=(%f, %f, %f)\n",
-            m_pose.qRotation.x,
-            m_pose.qRotation.y,
-            m_pose.qRotation.z,
-            m_pose.qRotation.w,
-            m_pose.vecPosition[0],
-            m_pose.vecPosition[1],
-            m_pose.vecPosition[2]);
-
-        // Note: no velocities are passed, so no reprojection is done. This field is unused
-        m_pose.poseTimeOffset = 0;
+        // This value is ignored on Windows (since it uses a direct mode driver), but necessary on
+        // Linux for correct controllers tracking.
+        m_pose.poseTimeOffset = predictionS;
 
         m_poseHistory->OnPoseUpdated(targetTimestampNs, motion);
 

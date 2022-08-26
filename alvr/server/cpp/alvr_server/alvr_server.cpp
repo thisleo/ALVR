@@ -164,6 +164,7 @@ void (*LogError)(const char *stringPtr);
 void (*LogWarn)(const char *stringPtr);
 void (*LogInfo)(const char *stringPtr);
 void (*LogDebug)(const char *stringPtr);
+void (*LogPeriodically)(const char *tag, const char *stringPtr);
 void (*DriverReadyIdle)(bool setDefaultChaprone);
 void (*VideoSend)(VideoFrame header, unsigned char *buf, int len);
 void (*HapticsSend)(unsigned long long path, float duration_s, float frequency, float amplitude);
@@ -219,7 +220,7 @@ void SetTracking(unsigned long long targetTimestampNs,
     for (int i = 0; i < motionsCount; i++) {
         if (deviceMotions[i].deviceID == HEAD_PATH && g_driver_provider.hmd) {
             g_driver_provider.hmd->OnPoseUpdated(
-                targetTimestampNs, deviceMotions[i]);
+                targetTimestampNs, controllerPredictionS, deviceMotions[i]);
         } else {
             if (deviceMotions[i].deviceID == LEFT_HAND_PATH && g_driver_provider.left_controller) {
                 g_driver_provider.left_controller->onPoseUpdate(
