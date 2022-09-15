@@ -5,15 +5,16 @@ use crate::{
     platform,
     statistics::StatisticsManager,
     AlvrEvent, VideoFrame, CONTROL_CHANNEL_SENDER, DECODER_REF, EVENT_BUFFER, IDR_PARSED,
-    STATISTICS_MANAGER, STATISTICS_SENDER, TRACKING_SENDER,
+    IS_RESUMED, STATISTICS_MANAGER, STATISTICS_SENDER, TRACKING_SENDER,
 };
 use alvr_audio::{AudioDevice, AudioDeviceType};
-use alvr_common::{prelude::*, ALVR_NAME, ALVR_VERSION};
+use alvr_common::{parking_lot, prelude::*, ALVR_NAME, ALVR_VERSION};
 use alvr_session::{AudioDeviceId, CodecType, OculusFovetionLevel, SessionDesc};
 use alvr_sockets::{
-    spawn_cancelable, ClientConfigPacket, ClientControlPacket, ClientHandshakePacket, Haptics,
-    HeadsetInfoPacket, PeerType, ProtoControlSocket, ServerControlPacket, ServerHandshakePacket,
-    StreamSocketBuilder, VideoFrameHeaderPacket, AUDIO, HAPTICS, STATISTICS, TRACKING, VIDEO,
+    spawn_cancelable, ClientConfigPacket, ClientConnectionResult, ClientControlPacket,
+    ClientHandshakePacket, Haptics, HeadsetInfoPacket, PeerType, ProtoControlSocket,
+    ServerControlPacket, ServerHandshakePacket, StreamSocketBuilder, VideoFrameHeaderPacket, AUDIO,
+    HAPTICS, STATISTICS, TRACKING, VIDEO,
 };
 use futures::future::BoxFuture;
 use glyph_brush_layout::{
@@ -154,8 +155,10 @@ fn on_server_connected(
     )
     .unwrap();
 }
-
-async fn connection_pipeline(headset_info: &HeadsetInfoPacket) -> StrResult {
+async fn connection_pipeline(
+    headset_info: HeadsetInfoPacket,
+    decoder_guard: Arc<parking_lot::Mutex<()>>,
+) -> StrResult {
     let device_name = platform::device_name();
     let hostname = platform::load_config().hostname;
 
@@ -208,8 +211,20 @@ async fn connection_pipeline(headset_info: &HeadsetInfoPacket) -> StrResult {
         } => pair
     };
 
+    if !IS_RESUMED.value() {
+        info!("Not streaming because not resumed");
+        proto_socket
+            .send(&ClientConnectionResult::ClientStandby)
+            .await
+            .map_err(err!())?;
+        return Ok(());
+    }
+
     proto_socket
-        .send(&(headset_info, server_ip))
+        .send(&ClientConnectionResult::ServerAccepted {
+            headset_info,
+            server_ip,
+        })
         .await
         .map_err(err!())?;
     let config_packet = proto_socket
@@ -496,8 +511,11 @@ async fn connection_pipeline(headset_info: &HeadsetInfoPacket) -> StrResult {
     let legacy_stream_socket_loop = task::spawn_blocking({
         let codec = settings.video.codec;
         let enable_fec = settings.connection.enable_fec;
+        let decoder_guard = Arc::clone(&decoder_guard);
         move || -> StrResult {
             unsafe {
+                let _guard = decoder_guard.lock();
+
                 // Note: legacyReceive() requires the java context to be attached to the current thread
                 // todo: investigate why
                 let vm = platform::vm();
@@ -508,6 +526,10 @@ async fn connection_pipeline(headset_info: &HeadsetInfoPacket) -> StrResult {
                 let mut idr_request_deadline = None;
 
                 while let Ok(mut data) = legacy_receive_data_receiver.recv() {
+                    if !IS_RESUMED.value() {
+                        break;
+                    }
+
                     // Send again IDR packet every 2s in case it is missed
                     // (due to dropped burst of packets at the start of the stream or otherwise).
                     if !IDR_PARSED.load(Ordering::Relaxed) {
@@ -528,10 +550,17 @@ async fn connection_pipeline(headset_info: &HeadsetInfoPacket) -> StrResult {
 
                 crate::closeSocket();
 
-                if let Some(decoder) = &*DECODER_REF.lock() {
+                let mut decoder = DECODER_REF.lock();
+
+                if let Some(decoder) = &*decoder {
                     env.call_method(decoder.as_obj(), "onDisconnect", "()V", &[])
                         .unwrap();
+
+                    env.call_method(decoder.as_obj(), "stopAndWait", "()V", &[])
+                        .unwrap();
                 }
+
+                *decoder = None;
             }
 
             Ok(())
@@ -539,7 +568,7 @@ async fn connection_pipeline(headset_info: &HeadsetInfoPacket) -> StrResult {
     });
 
     let game_audio_loop: BoxFuture<_> = if let Switch::Enabled(desc) = settings.audio.game_audio {
-        let device = AudioDevice::new(None, AudioDeviceId::Default, AudioDeviceType::Output)
+        let device = AudioDevice::new(None, &AudioDeviceId::Default, AudioDeviceType::Output)
             .map_err(err!())?;
 
         let game_audio_receiver = stream_socket.subscribe_to_stream(AUDIO).await?;
@@ -555,7 +584,7 @@ async fn connection_pipeline(headset_info: &HeadsetInfoPacket) -> StrResult {
     };
 
     let microphone_loop: BoxFuture<_> = if matches!(settings.audio.microphone, Switch::Enabled(_)) {
-        let device = AudioDevice::new(None, AudioDeviceId::Default, AudioDeviceType::Input)
+        let device = AudioDevice::new(None, &AudioDeviceId::Default, AudioDeviceType::Input)
             .map_err(err!())?;
 
         let microphone_sender = stream_socket.request_stream(AUDIO).await?;
@@ -648,10 +677,13 @@ async fn connection_pipeline(headset_info: &HeadsetInfoPacket) -> StrResult {
 pub async fn connection_lifecycle_loop(headset_info: HeadsetInfoPacket) {
     set_loading_message(INITIAL_MESSAGE);
 
+    let decoder_guard = Arc::new(parking_lot::Mutex::new(()));
+
     loop {
         tokio::join!(
             async {
-                let maybe_error = connection_pipeline(&headset_info).await;
+                let maybe_error =
+                    connection_pipeline(headset_info.clone(), Arc::clone(&decoder_guard)).await;
 
                 if let Err(e) = maybe_error {
                     let message = format!("Connection error:\n{e}\nCheck the PC for more details");

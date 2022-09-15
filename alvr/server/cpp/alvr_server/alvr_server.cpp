@@ -212,6 +212,7 @@ void RequestIDR() {
 }
 
 void SetTracking(unsigned long long targetTimestampNs,
+                 float headPredictionS,
                  float controllerPredictionS,
                  const AlvrDeviceMotion *deviceMotions,
                  int motionsCount,
@@ -220,7 +221,7 @@ void SetTracking(unsigned long long targetTimestampNs,
     for (int i = 0; i < motionsCount; i++) {
         if (deviceMotions[i].deviceID == HEAD_PATH && g_driver_provider.hmd) {
             g_driver_provider.hmd->OnPoseUpdated(
-                targetTimestampNs, controllerPredictionS, deviceMotions[i]);
+                targetTimestampNs, headPredictionS, deviceMotions[i]);
         } else {
             if (deviceMotions[i].deviceID == LEFT_HAND_PATH && g_driver_provider.left_controller) {
                 g_driver_provider.left_controller->onPoseUpdate(
@@ -313,5 +314,19 @@ void SetButton(unsigned long long path, AlvrButtonValue value) {
     } else if (std::find(RIGHT_CONTROLLER_BUTTONS.begin(), RIGHT_CONTROLLER_BUTTONS.end(), path) !=
                RIGHT_CONTROLLER_BUTTONS.end()) {
         g_driver_provider.right_controller->SetButton(path, value);
+    }
+}
+
+void SetBitrateParameters(unsigned long long bitrate_mbs,
+                          bool adaptive_bitrate_enabled,
+                          unsigned long long bitrate_max) {
+    if (g_driver_provider.hmd && g_driver_provider.hmd->m_Listener) {
+        if (adaptive_bitrate_enabled) {
+            g_driver_provider.hmd->m_Listener->m_Statistics->m_enableAdaptiveBitrate = true;
+            g_driver_provider.hmd->m_Listener->m_Statistics->m_adaptiveBitrateMaximum = bitrate_max;
+        } else {
+            g_driver_provider.hmd->m_Listener->m_Statistics->m_enableAdaptiveBitrate = false;
+            g_driver_provider.hmd->m_Listener->m_Statistics->m_bitrate = bitrate_mbs;
+        }
     }
 }

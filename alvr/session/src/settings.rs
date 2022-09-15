@@ -4,23 +4,7 @@ use settings_schema::{EntryData, SettingsSchema, Switch, SwitchDefault};
 
 include!(concat!(env!("OUT_DIR"), "/openvr_property_keys.rs"));
 
-// Field of view in radians
-#[derive(SettingsSchema, Serialize, Deserialize, PartialEq, Default, Clone, Copy)]
-pub struct Fov {
-    #[schema(min = 0., max = 90., step = 0.1, gui = "UpDown")]
-    pub left: f32,
-
-    #[schema(min = 0., max = 90., step = 0.1, gui = "UpDown")]
-    pub right: f32,
-
-    #[schema(min = 0., max = 90., step = 0.1, gui = "UpDown")]
-    pub top: f32,
-
-    #[schema(min = 0., max = 90., step = 0.1, gui = "UpDown")]
-    pub bottom: f32,
-}
-
-#[derive(SettingsSchema, Serialize, Deserialize)]
+#[derive(SettingsSchema, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase", tag = "type", content = "content")]
 pub enum FrameSize {
     #[schema(min = 0.25, max = 2., step = 0.01)]
@@ -49,7 +33,7 @@ pub enum MediacodecDataType {
 //     mediacodec_extra_options: Vec<(String, MediacodecDataType)>,
 // }
 
-#[derive(SettingsSchema, Serialize, Deserialize)]
+#[derive(SettingsSchema, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct LatencyUseFrametimeDesc {
     #[schema(advanced, min = 10000, max = 100000, step = 1000)]
@@ -59,7 +43,7 @@ pub struct LatencyUseFrametimeDesc {
     pub latency_target_offset: i32,
 }
 
-#[derive(SettingsSchema, Serialize, Deserialize)]
+#[derive(SettingsSchema, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AdaptiveBitrateDesc {
     #[schema(min = 10, max = 500, step = 1)]
@@ -95,7 +79,7 @@ pub enum OculusFovetionLevel {
     HighTop,
 }
 
-#[derive(SettingsSchema, Serialize, Deserialize)]
+#[derive(SettingsSchema, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct FoveatedRenderingDesc {
     #[schema(min = 0., max = 1., step = 0.01)]
@@ -151,7 +135,7 @@ pub enum CodecType {
     HEVC,
 }
 
-#[derive(SettingsSchema, Serialize, Deserialize)]
+#[derive(SettingsSchema, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct VideoDesc {
     #[schema(advanced)]
@@ -211,7 +195,7 @@ pub enum AudioDeviceId {
     Index(u64),
 }
 
-#[derive(SettingsSchema, Serialize, Deserialize)]
+#[derive(SettingsSchema, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AudioBufferingConfig {
     #[schema(min = 0, max = 200)]
@@ -221,7 +205,7 @@ pub struct AudioBufferingConfig {
     pub batch_ms: u64,
 }
 
-#[derive(SettingsSchema, Serialize, Deserialize)]
+#[derive(SettingsSchema, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct GameAudioDesc {
     #[schema(placeholder = "device_dropdown")]
@@ -234,7 +218,7 @@ pub struct GameAudioDesc {
 
 // Note: sample rate is a free parameter for microphone, because both server and client supports
 // resampling. In contrary, for game audio, the server does not support resampling.
-#[derive(SettingsSchema, Serialize, Deserialize)]
+#[derive(SettingsSchema, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct MicrophoneDesc {
     #[schema(placeholder = "input_device_dropdown")]
@@ -258,7 +242,7 @@ pub enum LinuxAudioBackend {
     Jack,
 }
 
-#[derive(SettingsSchema, Serialize, Deserialize)]
+#[derive(SettingsSchema, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AudioSection {
     #[schema(advanced)]
@@ -328,6 +312,12 @@ pub struct ControllersDesc {
     #[schema(advanced, min = 0.0, max = 1.0, step = 0.01)]
     pub prediction_multiplier: f32,
 
+    #[schema(advanced, min = -2.0, max = 2.0, step = 0.01)]
+    pub steamvr_hmd_prediction_multiplier: f32,
+
+    #[schema(advanced, min = -2.0, max = 2.0, step = 0.01)]
+    pub steamvr_ctrl_prediction_multiplier: f32,
+
     #[schema(advanced, min = 0., max = 0.1, step = 0.001)]
     pub linear_velocity_cutoff: f32,
 
@@ -359,14 +349,14 @@ pub struct ControllersDesc {
     pub use_headset_tracking_system: bool,
 }
 
-#[derive(SettingsSchema, Serialize, Deserialize)]
+#[derive(SettingsSchema, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Patches {
     pub remove_sync_popup: bool,
     pub linux_async_reprojection: bool,
 }
 
-#[derive(SettingsSchema, Serialize, Deserialize)]
+#[derive(SettingsSchema, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct HeadsetDesc {
     #[schema(advanced)]
@@ -420,7 +410,7 @@ pub struct HeadsetDesc {
     pub extra_latency_mode: bool,
 }
 
-#[derive(SettingsSchema, Serialize, Deserialize)]
+#[derive(SettingsSchema, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase", tag = "type", content = "content")]
 pub enum SocketProtocol {
     Udp,
@@ -435,14 +425,14 @@ pub enum SocketProtocol {
     Tcp,
 }
 
-#[derive(SettingsSchema, Serialize, Deserialize)]
+#[derive(SettingsSchema, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct DiscoveryConfig {
     #[schema(advanced)]
     pub auto_trust_clients: bool,
 }
 
-#[derive(SettingsSchema, Serialize, Deserialize)]
+#[derive(SettingsSchema, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectionDesc {
     pub client_discovery: Switch<DiscoveryConfig>,
@@ -479,7 +469,7 @@ pub enum Theme {
     Darkly,
 }
 
-#[derive(SettingsSchema, Serialize, Deserialize)]
+#[derive(SettingsSchema, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase", tag = "type", content = "content")]
 pub enum UpdateChannel {
     NoUpdates,
@@ -487,7 +477,7 @@ pub enum UpdateChannel {
     Nightly,
 }
 
-#[derive(SettingsSchema, Serialize, Deserialize)]
+#[derive(SettingsSchema, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase", tag = "type", content = "content")]
 pub enum LogLevel {
     Error,
@@ -496,7 +486,7 @@ pub enum LogLevel {
     Debug,
 }
 
-#[derive(SettingsSchema, Serialize, Deserialize)]
+#[derive(SettingsSchema, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtraDesc {
     pub theme: Theme,
@@ -513,10 +503,10 @@ pub struct ExtraDesc {
     #[schema(advanced)]
     pub exclude_notifications_without_id: bool,
 
-    patches: Patches,
+    pub patches: Patches,
 }
 
-#[derive(SettingsSchema, Serialize, Deserialize)]
+#[derive(SettingsSchema, Serialize, Deserialize, Clone)]
 pub struct Settings {
     pub video: VideoDesc,
     pub audio: AudioSection,
@@ -695,6 +685,8 @@ pub fn session_settings_default() -> SettingsDefault {
                     registered_device_type: "oculus/1WMGH000XX0000_Controller".into(),
                     input_profile_path: "{oculus}/input/touch_profile.json".into(),
                     prediction_multiplier: 1.0,
+                    steamvr_hmd_prediction_multiplier: 1.0,
+                    steamvr_ctrl_prediction_multiplier: 0.0,
                     linear_velocity_cutoff: 0.01,
                     angular_velocity_cutoff: 10.,
                     position_offset_left: [-0.0065, 0.002, -0.051],

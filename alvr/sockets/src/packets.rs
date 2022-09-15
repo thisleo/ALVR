@@ -5,7 +5,6 @@ use alvr_common::{
     semver::Version,
 };
 use alvr_events::ButtonValue;
-use alvr_session::Fov;
 use serde::{Deserialize, Serialize};
 
 pub const TRACKING: u16 = 0;
@@ -13,6 +12,15 @@ pub const HAPTICS: u16 = 1;
 pub const AUDIO: u16 = 2;
 pub const VIDEO: u16 = 3;
 pub const STATISTICS: u16 = 4;
+
+// Field of view in radians
+#[derive(Serialize, Deserialize, PartialEq, Default, Clone, Copy)]
+pub struct Fov {
+    pub left: f32,
+    pub right: f32,
+    pub top: f32,
+    pub bottom: f32,
+}
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ClientHandshakePacket {
@@ -51,6 +59,15 @@ pub struct HeadsetInfoPacket {
     // reserved field is used to add features in a minor release that otherwise would break the
     // packets schema
     pub reserved: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub enum ClientConnectionResult {
+    ServerAccepted {
+        headset_info: HeadsetInfoPacket,
+        server_ip: IpAddr,
+    },
+    ClientStandby,
 }
 
 #[derive(Serialize, Deserialize)]

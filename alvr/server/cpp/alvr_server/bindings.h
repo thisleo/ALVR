@@ -128,6 +128,7 @@ extern "C" void InitializeStreaming();
 extern "C" void DeinitializeStreaming();
 extern "C" void RequestIDR();
 extern "C" void SetTracking(unsigned long long targetTimestampNs,
+                            float headPredictionS,
                             float controllerPredictionS,
                             const AlvrDeviceMotion *deviceMotions,
                             int motionsCount,
@@ -143,3 +144,7 @@ extern "C" void SetChaperone(float areaWidth, float areaHeight);
 extern "C" void SetViewsConfig(ViewsConfigData config);
 extern "C" void SetBattery(unsigned long long topLevelPath, float gauge_value, bool is_plugged);
 extern "C" void SetButton(unsigned long long path, AlvrButtonValue value);
+
+extern "C" void SetBitrateParameters(unsigned long long bitrate_mbs,
+                                     bool adaptive_bitrate_enabled,
+                                     unsigned long long bitrate_max);
