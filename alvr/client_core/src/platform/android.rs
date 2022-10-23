@@ -3,7 +3,7 @@ use alvr_common::{
     prelude::*,
 };
 use alvr_session::{CodecType, MediacodecDataType};
-use jni::{sys::jobject, JavaVM};
+use jni::{objects::JObject, sys::jobject, JavaVM};
 use ndk::{
     hardware_buffer::HardwareBufferUsage,
     media::{
@@ -33,7 +33,7 @@ pub fn try_get_microphone_permission() {
 
     let permission_status = env
         .call_method(
-            context(),
+            unsafe { JObject::from_raw(context()) },
             "checkSelfPermission",
             "(Ljava/lang/String;)I",
             &[mic_perm_jstring.into()],
@@ -49,10 +49,10 @@ pub fn try_get_microphone_permission() {
             .unwrap();
 
         env.call_method(
-            context(),
+            unsafe { JObject::from_raw(context()) },
             "requestPermissions",
             "([Ljava/lang/String;I)V",
-            &[perm_array.into(), 0.into()],
+            &[unsafe { JObject::from_raw(perm_array) }.into(), 0.into()],
         )
         .unwrap();
 
@@ -64,31 +64,14 @@ pub fn device_name() -> String {
     let vm = vm();
     let env = vm.attach_current_thread().unwrap();
 
-    let jbrand_name = env
-        .get_static_field("android/os/Build", "BRAND", "Ljava/lang/String;")
-        .unwrap()
-        .l()
-        .unwrap();
-    let brand_name_raw = env.get_string(jbrand_name.into()).unwrap();
-    let brand_name = brand_name_raw.to_string_lossy().as_ref().to_owned();
-    // Capitalize first letter
-    let mut brand_name_it = brand_name.chars();
-    let brand_name = brand_name_it
-        .next()
-        .unwrap()
-        .to_uppercase()
-        .chain(brand_name_it)
-        .collect::<String>();
-
     let jdevice_name = env
         .get_static_field("android/os/Build", "MODEL", "Ljava/lang/String;")
         .unwrap()
         .l()
         .unwrap();
     let device_name_raw = env.get_string(jdevice_name.into()).unwrap();
-    let device_name = device_name_raw.to_string_lossy().as_ref().to_owned();
 
-    format!("{brand_name} {device_name}")
+    device_name_raw.to_string_lossy().as_ref().to_owned()
 }
 
 pub struct VideoDecoderEnqueuer {
